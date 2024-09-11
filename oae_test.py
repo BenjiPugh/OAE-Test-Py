@@ -13,13 +13,13 @@ f2 = 1.22 * f1      # Hz
 f_oae = 2*f1 - f2   # Hz, the OAE freq we are looking for
 
 test_duration = 1  # Seconds
-N = SAMPLE_RATE*test_duration
+N = SAMPLE_RATE*test_duration   # Number of total samples played back
 
 
 # Generate stimulus tones
 t = np.linspace(0, test_duration, test_duration*SAMPLE_RATE, False)
-f1_tone = np.sin(f1*np.pi*t).astype(np.float32)
-f2_tone = np.sin(f2*np.pi*t).astype(np.float32)
+f1_tone = np.sin(f1*2*np.pi*t).astype(np.float32)
+f2_tone = np.sin(f2*2*np.pi*t).astype(np.float32)
 tones = np.vstack((f1_tone, f2_tone)).T
 
 
@@ -69,8 +69,6 @@ while stream_out.is_active():
     recorded_audio = np.hstack((recorded_audio,data_in))
     
 recorded_audio = recorded_audio-recorded_audio.mean()
-print(np.shape(recorded_audio))
-print(recorded_audio)
 
 #Better STFT approach, needs to be modified
 fig, ax = plt.subplots()
@@ -78,10 +76,27 @@ fig, ax = plt.subplots()
 win = scipy.signal.windows.hamming(CHUNK_SIZE)
 SFT = scipy.signal.ShortTimeFFT(win, int(CHUNK_SIZE/2), fs=SAMPLE_RATE)
 Sx = SFT.stft(recorded_audio)
-Sx_dB = 20*np.log10(abs(Sx))
-im1 = ax.imshow(Sx_dB, origin='lower', aspect='auto', extent=SFT.extent(N), cmap='viridis')
+Sx_dB = 20*np.log10(np.abs(Sx))
+sft_extent = SFT.extent(np.size(recorded_audio))
+im1 = ax.imshow(Sx_dB, origin='lower', aspect='auto', extent=sft_extent, cmap='viridis')
 plt.show()
 
+# OAE identification section
+
+sft_frequencies = np.linspace(sft_extent[2], sft_extent[3], 513)
+
+f1_idx = np.argmin(np.abs(sft_frequencies-f1))
+f2_idx = np.argmin(np.abs(sft_frequencies-f2))
+oae_idx= np.argmin(np.abs(sft_frequencies-f_oae))
+print(f1_idx, f2_idx, oae_idx)
+Sx_means = np.mean(np.abs(Sx),1)
+Sx_mean_dB = 20*np.log10(Sx_means)
+
+
+print("f1 mean dB: ", Sx_mean_dB[f1_idx])
+print("f2 mean dB: ", Sx_mean_dB[f2_idx])
+print("OAE mean dB: ", Sx_mean_dB[oae_idx])
+print("Note: this is not dBFS")
 
 # Close stream and PyAudio
 stream_out.stop_stream()
