@@ -7,21 +7,23 @@ import matplotlib.pyplot as plt
 SAMPLE_RATE = 44100
 CHUNK_SIZE = 1024  # Number of frames per buffer
 
+MIN_DB_ABOVE_NF = 6 # The minimum level that the OAE must be above the noise floor for the test to pass
+
 # OAE Frequencies
 f1 = 2000           # Hz, Modifiable
 f2 = 1.22 * f1      # Hz
 f_oae = 2*f1 - f2   # Hz, the OAE freq we are looking for
 
-test_duration = 1  # Seconds
+test_duration = 0.5 # Seconds
 N = SAMPLE_RATE*test_duration   # Number of total samples played back
 
 
 # Generate stimulus tones
-t = np.linspace(0, test_duration, test_duration*SAMPLE_RATE, False)
+t = np.linspace(0, test_duration, int(test_duration*SAMPLE_RATE), False)
 f1_tone = np.sin(f1*2*np.pi*t).astype(np.float32)
 f2_tone = np.sin(f2*2*np.pi*t).astype(np.float32)
+chirp = scipy.signal.chirp(t, f0=8000, f1=800, t1=test_duration, method='logarithmic').astype(np.float32)
 tones = np.vstack((f1_tone, f2_tone)).T
-
 
 pos = 0 # Position used in callback
 
@@ -61,11 +63,6 @@ stream_in.start_stream()
 recorded_audio = np.empty((0),dtype=np.float32)
 while stream_out.is_active():
     data_in = np.frombuffer(stream_in.read(CHUNK_SIZE), dtype=np.float32)
-    data_fft = fft(data_in)
-    #ax.cla()
-    #ax.plot(np.abs(data_fft))
-    #plt.show()
-    # Perform real-time Fourier transform
     recorded_audio = np.hstack((recorded_audio,data_in))
     
 recorded_audio = recorded_audio-recorded_audio.mean()
@@ -79,7 +76,7 @@ Sx = SFT.stft(recorded_audio)
 Sx_dB = 20*np.log10(np.abs(Sx))
 sft_extent = SFT.extent(np.size(recorded_audio))
 im1 = ax.imshow(Sx_dB, origin='lower', aspect='auto', extent=sft_extent, cmap='viridis')
-plt.show()
+#plt.show()
 
 # OAE identification section
 
@@ -88,15 +85,21 @@ sft_frequencies = np.linspace(sft_extent[2], sft_extent[3], 513)
 f1_idx = np.argmin(np.abs(sft_frequencies-f1))
 f2_idx = np.argmin(np.abs(sft_frequencies-f2))
 oae_idx= np.argmin(np.abs(sft_frequencies-f_oae))
+nf_idx = [-6,-5,-4, 4, 5, 6] + oae_idx # Indicies from which we will sample the noise floor
 print(f1_idx, f2_idx, oae_idx)
 Sx_means = np.mean(np.abs(Sx),1)
 Sx_mean_dB = 20*np.log10(Sx_means)
-
+nf_mean_dB = 20*np.log10(np.mean(Sx_means[nf_idx]))
 
 print("f1 mean dB: ", Sx_mean_dB[f1_idx])
 print("f2 mean dB: ", Sx_mean_dB[f2_idx])
 print("OAE mean dB: ", Sx_mean_dB[oae_idx])
+print("Noise Floor dB: ", nf_mean_dB)
 print("Note: this is not dBFS")
+if (Sx_mean_dB[oae_idx] - nf_mean_dB > MIN_DB_ABOVE_NF):
+    print("Pass")
+else:
+    print("Refer")
 
 # Close stream and PyAudio
 stream_out.stop_stream()
